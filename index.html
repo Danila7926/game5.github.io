@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Шарик в лабиринте</title>
+<style>
+  html,body{margin:0;height:100%;background:#111;overflow:hidden;touch-action:none}
+  canvas{display:block}
+  #btn{position:fixed;top:12px;right:12px;padding:10px 16px;font-size:16px;
+       border-radius:10px;border:none;background:#ffd43b;font-weight:600}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="btn">Заново</button>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// лабиринт в нормированных координатах (0..1) — легко менять
+const walls = [
+  [0.00,0.00,1.00,0.03], [0.00,0.97,1.00,0.03],
+  [0.00,0.00,0.03,1.00], [0.97,0.00,0.03,1.00],
+  [0.10,0.10,0.80,0.03],
+  [0.30,0.13,0.03,0.42],
+  [0.55,0.15,0.03,0.40],
+  [0.15,0.55,0.55,0.03],
+  [0.75,0.45,0.03,0.35],
+  [0.30,0.75,0.45,0.03],
+];
+const start = {x:0.07, y:0.05};        // старт
+const goal  = {x:0.90, y:0.90, r:0.05};// финиш
+
+let W,H,scale,marginX=0,marginY=0,ball;
+
+function toPx(p){ return {x: marginX + p.x*scale, y: marginY + p.y*scale}; }
+
+function reset(){
+  const s = toPx(start);
+  ball = {x:s.x, y:s.y, r:0.02*scale, vx:0, vy:0, won:false};
+  document.getElementById('btn').textContent='Заново';
+}
+
+function resize(){
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  scale = Math.min(W,H);
+  marginX = (W-scale)/2; marginY = (H-scale)/2;
+  reset();
+}
+
+// наклон телефона: gamma — влево/вправо, beta — вперёд/назад
+let ax=0, ay=0;
+window.addEventListener('deviceorientation', e=>{
+  ax = Math.max(-1, Math.min(1, (e.gamma||0)/40));
+  ay = Math.max(-1, Math.min(1, (e.beta ||0)/40));
+});
+
+// на компьютере управление стрелками
+const keys={};
+addEventListener('keydown',e=>keys[e.key]=true);
+addEventListener('keyup',e=>keys[e.key]=false);
+
+// iOS требует явного разрешения на доступ к датчикам
+addEventListener('click', ()=>{
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().catch(()=>{});
+  }
+}, {once:true});
+
+function step(dt){
+  let fx=ax, fy=ay;
+  if(keys['ArrowLeft'])fx-=1; if(keys['ArrowRight'])fx+=1;
+  if(keys['ArrowUp'])fy-=1;   if(keys['ArrowDown'])fy+=1;
+
+  const G = 1600;                       // сила наклона
+  ball.vx += fx*G*dt;
+  ball.vy += fy*G*dt;
+  ball.vx *= Math.pow(0.6, dt);         // трение
+  ball.vy *= Math.pow(0.6, dt);
+
+  ball.x += ball.vx*dt;
+  ball.y += ball.vy*dt;
+
+  // столкновения со стенами
+  for(const w of walls){
+    const wx=marginX+w[0]*scale, wy=marginY+w[1]*scale,
+          ww=w[2]*scale, wh=w[3]*scale;
+    const cx = Math.max(wx, Math.min(ball.x, wx+ww));
+    const cy = Math.max(wy, Math.min(ball.y, wy+wh));
+    const dx = ball.x-cx, dy = ball.y-cy;
+    if (dx*dx+dy*dy < ball.r*ball.r){
+      const d = Math.hypot(dx,dy) || 0.001;
+      const nx=dx/d, ny=dy/d;
+      ball.x += nx*(ball.r-d);          // выталкиваем шарик
+      ball.y += ny*(ball.r-d);
+      const vn = ball.vx*nx + ball.vy*ny;
+      ball.vx -= 1.5*vn*nx;             // отскок с потерей энергии
+      ball.vy -= 1.5*vn*ny;
+    }
+  }
+
+  // финиш
+  const g = toPx(goal);
+  if (Math.hypot(ball.x-g.x, ball.y-g.y) < goal.r*scale && !ball.won){
+    ball.won = true;
+    document.getElementById('btn').textContent='Победа! Заново';
+  }
+}
+
+function draw(){
+  ctx.fillStyle='#101018'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#3a4a6b';
+  for(const w of walls)
+    ctx.fillRect(marginX+w[0]*scale, marginY+w[1]*scale, w[2]*scale, w[3]*scale);
+  const g = toPx(goal);
+  ctx.beginPath(); ctx.arc(g.x,g.y,goal.r*scale,0,7);
+  ctx.fillStyle='#2ecc71'; ctx.fill();
+  ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,7);
+  ctx.fillStyle='#ff5252'; ctx.fill();
+}
+
+let last = performance.now();
+function loop(t){
+  const dt = Math.min((t-last)/1000, 0.03); last=t;
+  if(!ball.won) step(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('btn').addEventListener('click', reset);
+addEventListener('resize', resize);
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
